@@ -7,6 +7,10 @@ from datetime import datetime
 from flask import * # Flask, g, redirect, render_template, request, url_for
 from functools import wraps
 
+from functools import wraps
+from flask import request, abort
+import json
+
 app = Flask(__name__)
 
 # These should make it so your Flask app always returns the latest version of
@@ -172,15 +176,70 @@ def room(room_id):
 
 # -------------------------------- API ROUTES ----------------------------------
 
-# POST to change the user's name
-@app.route('/api/user/name')
+# Decorator function to check API key
+def require_api_key(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        api_key = request.headers.get('API-Key')
+        return func(*args, **kwargs)
+    return wrapper
+
+# API endpoint to retrieve all messages in a chat room
+@app.route('/api/room/<int:room_id>/messages')
+@require_api_key
+def get_room_messages(room_id):
+    messages = query_db('SELECT * FROM messages WHERE room_id = ?', [room_id])
+    message_list = [{'author': message['user_id'], 'content': message['body']} for message in messages]
+    return json.dumps(message_list)
+
+# API endpoint to post a message in a chat room
+@app.route('/api/room/<int:room_id>/message', methods=['POST'])
+@require_api_key
+def post_message(room_id):
+    user_id = request.cookies.get('user_id')
+    data = request.json
+    content = data.get('content')
+    if content and user_id:
+        query_db('INSERT INTO messages (room_id, user_id, body) VALUES (?, ?, ?)', [room_id, user_id, content])
+        return '', 201
+    else:
+        return 'Content is required', 400
+
+# API endpoint to update room name
+@app.route('/api/room/<int:room_id>/name', methods=['POST'])
+@require_api_key
+def update_room_name(room_id):
+    user_id = request.cookies.get('user_id')
+    data = request.json
+    new_name = data.get('name')
+    if new_name and user_id:
+        query_db('UPDATE rooms SET name = ? WHERE id = ?', [new_name, room_id])
+        return '', 204
+    else:
+        return 'New name is required', 400
+
+# API endpoint to update username
+@app.route('/api/user/name', methods=['POST'])
+@require_api_key
 def update_username():
-    return {}, 403
+    user_id = request.cookies.get('user_id')
+    data = request.json
+    new_username = data.get('username')
+    if new_username and user_id:
+        query_db('UPDATE users SET name = ? WHERE id = ?', [new_username, user_id])
+        return '', 204
+    else:
+        return 'New username is required', 400
 
-# POST to change the user's password
-
-# POST to change the name of a room
-
-# GET to get all the messages in a room
-
-# POST to post a new message to a room
+# API endpoint to update password
+@app.route('/api/user/password', methods=['POST'])
+@require_api_key
+def update_password():
+    user_id = request.cookies.get('user_id')
+    data = request.json
+    new_password = data.get('password')
+    if new_password and user_id:
+        query_db('UPDATE users SET password = ? WHERE id = ?', [new_password, user_id])
+        return '', 204
+    else:
+        return 'New password is required', 400
